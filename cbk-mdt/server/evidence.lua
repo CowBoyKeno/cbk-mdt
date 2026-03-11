@@ -13,8 +13,47 @@ local function str(value, maxLen)
     return cleaned
 end
 
+local function normalizeMetadata(value, evidenceType, depth, stats)
+    local limits = Config.Evidence or {}
+    local maxDepth = tonumber(limits.maxMetadataDepth) or 3
+    local maxKeys = tonumber(limits.maxMetadataKeys) or 30
+    local maxString = tonumber(limits.maxMetadataStringLength) or 200
+    local allowedMap = limits.allowedMetadata or {}
+    local whitelist = allowedMap[evidenceType] or allowedMap.general or {}
+
+    if type(value) ~= 'table' then
+        return {}
+    end
+
+    depth = depth or 0
+    stats = stats or { keys = 0 }
+    if depth >= maxDepth then
+        return {}
+    end
+
+    local out = {}
+    for key, item in pairs(value) do
+        if type(key) == 'string' and whitelist[key] == true then
+            stats.keys = stats.keys + 1
+            if stats.keys <= maxKeys then
+                if type(item) == 'string' then
+                    out[key] = str(item, maxString)
+                elseif type(item) == 'number' then
+                    out[key] = tonumber(item) or 0
+                elseif type(item) == 'boolean' then
+                    out[key] = item
+                elseif type(item) == 'table' then
+                    out[key] = normalizeMetadata(item, evidenceType, depth + 1, stats)
+                end
+            end
+        end
+    end
+
+    return out
+end
+
 CBK_MDT.RegisterAction('add_evidence', function(source, payload)
-    local allowed, reason = CBK_MDT.RequireOfficer(source)
+    local allowed, reason = CBK_MDT.RequirePermission(source, 'evidence_writer')
     if not allowed then
         return false, reason
     end
@@ -31,8 +70,10 @@ CBK_MDT.RegisterAction('add_evidence', function(source, payload)
     end
 
     if metadata ~= nil and type(metadata) ~= 'table' then
-        metadata = nil
+        metadata = {}
     end
+
+    metadata = normalizeMetadata(metadata or {}, evidenceType)
 
     local reportExists = MySQL.single.await('SELECT id FROM mdt_reports WHERE id = ?', { reportId })
     if not reportExists then
@@ -51,19 +92,25 @@ CBK_MDT.RegisterAction('add_evidence', function(source, payload)
         evidenceType,
         description,
         imageUrl,
-        metadata and json.encode(metadata) or json.encode({}),
+        json.encode(metadata),
         officerIdentifier,
         officerName,
         now(),
         now()
     })
 
-    CBK_MDT.AppendOfficerActivity(officerIdentifier, 'evidence_added', ('Added evidence #%s to report #%s'):format(tostring(evidenceId), tostring(reportId)))
+    CBK_MDT.RecordOfficerActivity(source, 'evidence_added', ('Added evidence #%s to report #%s'):format(tostring(evidenceId), tostring(reportId)))
+    CBK_MDT.LogAudit(source, 'evidence', tostring(evidenceId), 'evidence_added', {}, {
+        id = evidenceId,
+        report_id = reportId,
+        evidence_type = evidenceType,
+        image_url = imageUrl
+    })
     return true, { id = evidenceId }
 end)
 
 CBK_MDT.RegisterAction('list_evidence', function(source, payload)
-    local allowed, reason = CBK_MDT.RequireOfficer(source)
+    local allowed, reason = CBK_MDT.RequirePermission(source, 'view')
     if not allowed then
         return false, reason
     end

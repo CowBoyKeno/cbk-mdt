@@ -14,7 +14,7 @@ local function str(value, maxLen)
 end
 
 CBK_MDT.RegisterAction('search_vehicles', function(source, payload)
-    local allowed, reason = CBK_MDT.RequireOfficer(source)
+    local allowed, reason = CBK_MDT.RequirePermission(source, 'view')
     if not allowed then
         return false, reason
     end
@@ -43,7 +43,7 @@ CBK_MDT.RegisterAction('search_vehicles', function(source, payload)
 end)
 
 CBK_MDT.RegisterAction('upsert_vehicle', function(source, payload)
-    local allowed, reason = CBK_MDT.RequireOfficer(source)
+    local allowed, reason = CBK_MDT.RequirePermission(source, 'vehicle_writer')
     if not allowed then
         return false, reason
     end
@@ -57,6 +57,8 @@ CBK_MDT.RegisterAction('upsert_vehicle', function(source, payload)
     if plate == '' then
         return false, 'Plate is required'
     end
+
+    local before = MySQL.single.await('SELECT plate, owner_identifier, model_name, vehicle_class, color FROM mdt_vehicles WHERE plate = ?', { plate })
 
     MySQL.insert.await([[
         INSERT INTO mdt_vehicles (plate, owner_identifier, model_name, vehicle_class, color, stolen, flags, notes, created_at, updated_at)
@@ -77,12 +79,19 @@ CBK_MDT.RegisterAction('upsert_vehicle', function(source, payload)
         now()
     })
 
-    CBK_MDT.AppendOfficerActivity(Framework.GetIdentifier(source), 'vehicle_upserted', ('Upserted vehicle %s'):format(plate))
+    CBK_MDT.RecordOfficerActivity(source, 'vehicle_upserted', ('Upserted vehicle %s'):format(plate))
+    CBK_MDT.LogAudit(source, 'vehicle', plate, 'vehicle_upserted', before or {}, {
+        plate = plate,
+        owner_identifier = ownerIdentifier,
+        model_name = modelName,
+        vehicle_class = vehicleClass,
+        color = color
+    })
     return true, { success = true }
 end)
 
 CBK_MDT.RegisterAction('set_vehicle_stolen', function(source, payload)
-    local allowed, reason = CBK_MDT.RequireOfficer(source)
+    local allowed, reason = CBK_MDT.RequirePermission(source, 'vehicle_supervisor')
     if not allowed then
         return false, reason
     end
@@ -95,6 +104,8 @@ CBK_MDT.RegisterAction('set_vehicle_stolen', function(source, payload)
         return false, 'Invalid plate'
     end
 
+    local before = MySQL.single.await('SELECT plate, stolen, notes FROM mdt_vehicles WHERE plate = ?', { plate })
+
     local updated = MySQL.update.await('UPDATE mdt_vehicles SET stolen = ?, notes = ?, updated_at = ? WHERE plate = ?', {
         stolen and 1 or 0,
         notes,
@@ -106,6 +117,11 @@ CBK_MDT.RegisterAction('set_vehicle_stolen', function(source, payload)
         return false, 'Vehicle not found'
     end
 
-    CBK_MDT.AppendOfficerActivity(Framework.GetIdentifier(source), 'vehicle_stolen_flag', ('Vehicle %s stolen flag set: %s'):format(plate, tostring(stolen)))
+    CBK_MDT.RecordOfficerActivity(source, 'vehicle_stolen_flag', ('Vehicle %s stolen flag set: %s'):format(plate, tostring(stolen)))
+    CBK_MDT.LogAudit(source, 'vehicle', plate, 'vehicle_stolen_flag', before or {}, {
+        plate = plate,
+        stolen = stolen and 1 or 0,
+        notes = notes
+    })
     return true, { success = true }
 end)

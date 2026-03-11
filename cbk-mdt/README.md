@@ -1,4 +1,4 @@
-# CBK MDT
+# KS MDT
 
 Production-ready FiveM Police MDT resource with oxmysql persistence, secure server-authoritative actions, multi-framework adapters, and modern NUI.
 
@@ -52,10 +52,8 @@ The schema creates all required MDT tables with timestamps:
 - `mdt_radar_logs`
 - `mdt_charges`
 - `mdt_officers`
-
-Additional helper table included:
-
 - `mdt_vehicles`
+- `mdt_audit_log` (immutable mutation audit trail)
 
 ## Framework Configuration
 
@@ -126,7 +124,8 @@ cbk-mdt/
 
 - Server-authoritative action handling in `server/server.lua`
 - Payload validation and input length control
+- Session freshness checks for source validity, identity, and department continuity
+- Optional on-duty enforcement on secured actions
 - No trust in client-side calculations (charges recalculated server-side)
 - Query limits via configurable max search values
-- Radar logging includes lightweight source rate limiting
-
+- Radar logging includes source rate limits plus batched database inserts

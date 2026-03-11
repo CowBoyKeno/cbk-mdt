@@ -20,8 +20,51 @@ local function cleanTable(value)
     return {}
 end
 
+local function normalizeCitizenRefs(list)
+    local out = {}
+    for _, entry in ipairs(cleanTable(list)) do
+        if type(entry) == 'table' then
+            local identifier = str(entry.identifier or '', 80)
+            if identifier ~= '' then
+                out[#out + 1] = {
+                    identifier = identifier,
+                    name = str(entry.name or entry.full_name or '', Config.Report.maxCitizenNameLength or 120)
+                }
+            end
+        end
+    end
+    return out
+end
+
+local function normalizeVehicleRefs(list)
+    local out = {}
+    for _, entry in ipairs(cleanTable(list)) do
+        if type(entry) == 'table' then
+            local plate = string.upper(str(entry.plate or '', 12))
+            if plate ~= '' then
+                out[#out + 1] = {
+                    plate = plate,
+                    model = str(entry.model or entry.model_name or '', Config.Report.maxVehicleModelLength or 80)
+                }
+            end
+        end
+    end
+    return out
+end
+
+local function normalizeEvidenceRefs(list)
+    local out = {}
+    for _, entry in ipairs(cleanTable(list)) do
+        local id = type(entry) == 'table' and tonumber(entry.id) or tonumber(entry)
+        if id and id > 0 then
+            out[#out + 1] = { id = id }
+        end
+    end
+    return out
+end
+
 CBK_MDT.RegisterAction('create_report', function(source, payload)
-    local allowed, reason = CBK_MDT.RequireOfficer(source)
+    local allowed, reason = CBK_MDT.RequirePermission(source, 'report_writer')
     if not allowed then
         return false, reason
     end
@@ -35,10 +78,10 @@ CBK_MDT.RegisterAction('create_report', function(source, payload)
     local title = str(payload.title or '', Config.Report.maxTitleLength)
     local summary = str(payload.summary or '', Config.Report.maxSummaryLength)
     local narrative = str(payload.narrative or '', Config.Report.maxNarrativeLength)
-    local involvedCitizens = cleanTable(payload.involved_citizens)
-    local involvedVehicles = cleanTable(payload.involved_vehicles)
+    local involvedCitizens = normalizeCitizenRefs(payload.involved_citizens)
+    local involvedVehicles = normalizeVehicleRefs(payload.involved_vehicles)
     local chargesInput = cleanTable(payload.charges)
-    local evidenceRefs = cleanTable(payload.evidence_refs)
+    local evidenceRefs = normalizeEvidenceRefs(payload.evidence_refs)
 
     if title == '' then
         return false, 'Report title is required'
@@ -88,7 +131,14 @@ CBK_MDT.RegisterAction('create_report', function(source, payload)
         now()
     })
 
-    CBK_MDT.AppendOfficerActivity(officerIdentifier, 'report_created', ('Created %s report #%s'):format(reportType, tostring(reportId)))
+    CBK_MDT.RecordOfficerActivity(source, 'report_created', ('Created %s report #%s'):format(reportType, tostring(reportId)))
+    CBK_MDT.LogAudit(source, 'report', tostring(reportId), 'report_created', {}, {
+        id = reportId,
+        report_type = reportType,
+        title = title,
+        total_fines = totalFine,
+        total_jail_time = totalJail
+    })
 
     return true, {
         id = reportId,
@@ -99,7 +149,7 @@ CBK_MDT.RegisterAction('create_report', function(source, payload)
 end)
 
 CBK_MDT.RegisterAction('search_reports', function(source, payload)
-    local allowed, reason = CBK_MDT.RequireOfficer(source)
+    local allowed, reason = CBK_MDT.RequirePermission(source, 'view')
     if not allowed then
         return false, reason
     end
@@ -136,7 +186,7 @@ CBK_MDT.RegisterAction('search_reports', function(source, payload)
 end)
 
 CBK_MDT.RegisterAction('get_report', function(source, payload)
-    local allowed, reason = CBK_MDT.RequireOfficer(source)
+    local allowed, reason = CBK_MDT.RequirePermission(source, 'view')
     if not allowed then
         return false, reason
     end

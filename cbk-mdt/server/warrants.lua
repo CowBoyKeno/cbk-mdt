@@ -14,7 +14,7 @@ local function str(value, maxLen)
 end
 
 CBK_MDT.RegisterAction('create_warrant', function(source, payload)
-    local allowed, reason = CBK_MDT.RequireOfficer(source)
+    local allowed, reason = CBK_MDT.RequirePermission(source, 'warrant_writer')
     if not allowed then
         return false, reason
     end
@@ -54,12 +54,18 @@ CBK_MDT.RegisterAction('create_warrant', function(source, payload)
         now()
     })
 
-    CBK_MDT.AppendOfficerActivity(officerIdentifier, 'warrant_created', ('Created warrant #%s for %s'):format(tostring(insertId), citizenIdentifier))
+    CBK_MDT.RecordOfficerActivity(source, 'warrant_created', ('Created warrant #%s for %s'):format(tostring(insertId), citizenIdentifier))
+    CBK_MDT.LogAudit(source, 'warrant', tostring(insertId), 'warrant_created', {}, {
+        id = insertId,
+        citizen_identifier = citizenIdentifier,
+        status = 'active',
+        title = title
+    })
     return true, { id = insertId }
 end)
 
 CBK_MDT.RegisterAction('list_warrants', function(source, payload)
-    local allowed, reason = CBK_MDT.RequireOfficer(source)
+    local allowed, reason = CBK_MDT.RequirePermission(source, 'view')
     if not allowed then
         return false, reason
     end
@@ -84,7 +90,7 @@ CBK_MDT.RegisterAction('list_warrants', function(source, payload)
 end)
 
 CBK_MDT.RegisterAction('update_warrant_status', function(source, payload)
-    local allowed, reason = CBK_MDT.RequireOfficer(source)
+    local allowed, reason = CBK_MDT.RequirePermission(source, 'warrant_writer')
     if not allowed then
         return false, reason
     end
@@ -100,6 +106,17 @@ CBK_MDT.RegisterAction('update_warrant_status', function(source, payload)
         return false, 'Invalid status'
     end
 
+    local warrant = MySQL.single.await('SELECT id, status, issued_by_identifier FROM mdt_warrants WHERE id = ?', { id })
+    if not warrant then
+        return false, 'Warrant not found'
+    end
+
+    local officerIdentifier = Framework.GetIdentifier(source)
+    local isSupervisor = CBK_MDT.HasPermission(source, 'warrant_supervisor')
+    if warrant.issued_by_identifier ~= officerIdentifier and not isSupervisor then
+        return false, 'Only issuing officer or supervisor can change this warrant'
+    end
+
     local updated = MySQL.update.await('UPDATE mdt_warrants SET status = ?, updated_at = ? WHERE id = ?', {
         status,
         now(),
@@ -110,6 +127,11 @@ CBK_MDT.RegisterAction('update_warrant_status', function(source, payload)
         return false, 'Warrant not found'
     end
 
-    CBK_MDT.AppendOfficerActivity(Framework.GetIdentifier(source), 'warrant_status_updated', ('Warrant #%s status set to %s'):format(tostring(id), status))
+    CBK_MDT.RecordOfficerActivity(source, 'warrant_status_updated', ('Warrant #%s status set to %s'):format(tostring(id), status))
+    CBK_MDT.LogAudit(source, 'warrant', tostring(id), 'warrant_status_updated', {
+        status = warrant.status
+    }, {
+        status = status
+    })
     return true, { success = true }
 end)

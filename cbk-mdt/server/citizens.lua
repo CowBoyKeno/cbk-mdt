@@ -14,7 +14,7 @@ local function str(value, maxLen)
 end
 
 CBK_MDT.RegisterAction('search_citizens', function(source, payload)
-    local allowed, reason = CBK_MDT.RequireOfficer(source)
+    local allowed, reason = CBK_MDT.RequirePermission(source, 'view')
     if not allowed then
         return false, reason
     end
@@ -41,7 +41,7 @@ CBK_MDT.RegisterAction('search_citizens', function(source, payload)
 end)
 
 CBK_MDT.RegisterAction('get_citizen_profile', function(source, payload)
-    local allowed, reason = CBK_MDT.RequireOfficer(source)
+    local allowed, reason = CBK_MDT.RequirePermission(source, 'view')
     if not allowed then
         return false, reason
     end
@@ -82,7 +82,7 @@ CBK_MDT.RegisterAction('get_citizen_profile', function(source, payload)
 end)
 
 CBK_MDT.RegisterAction('save_citizen_notes', function(source, payload)
-    local allowed, reason = CBK_MDT.RequireOfficer(source)
+    local allowed, reason = CBK_MDT.RequirePermission(source, 'citizen_writer')
     if not allowed then
         return false, reason
     end
@@ -99,6 +99,8 @@ CBK_MDT.RegisterAction('save_citizen_notes', function(source, payload)
         flags = {}
     end
 
+    local before = MySQL.single.await('SELECT identifier, notes, flags FROM mdt_citizens WHERE identifier = ?', { citizenIdentifier })
+
     local result = MySQL.update.await('UPDATE mdt_citizens SET notes = ?, flags = ?, updated_at = ? WHERE identifier = ?', {
         notes,
         json.encode(flags),
@@ -110,14 +112,18 @@ CBK_MDT.RegisterAction('save_citizen_notes', function(source, payload)
         return false, 'Citizen not found'
     end
 
-    local officerIdentifier = Framework.GetIdentifier(source)
-    CBK_MDT.AppendOfficerActivity(officerIdentifier, 'citizen_notes_updated', ('Updated notes for citizen %s'):format(citizenIdentifier))
+    CBK_MDT.RecordOfficerActivity(source, 'citizen_notes_updated', ('Updated notes for citizen %s'):format(citizenIdentifier))
+    CBK_MDT.LogAudit(source, 'citizen', citizenIdentifier, 'citizen_notes_updated', before or {}, {
+        identifier = citizenIdentifier,
+        notes = notes,
+        flags = flags
+    })
 
     return true, { success = true }
 end)
 
 CBK_MDT.RegisterAction('create_or_update_citizen', function(source, payload)
-    local allowed, reason = CBK_MDT.RequireOfficer(source)
+    local allowed, reason = CBK_MDT.RequirePermission(source, 'citizen_supervisor')
     if not allowed then
         return false, reason
     end
@@ -132,6 +138,12 @@ CBK_MDT.RegisterAction('create_or_update_citizen', function(source, payload)
     if identifier == '' or fullName == '' then
         return false, 'Identifier and full name are required'
     end
+
+    local before = MySQL.single.await([[
+        SELECT identifier, full_name, date_of_birth, phone_number, address, licenses_status
+        FROM mdt_citizens
+        WHERE identifier = ?
+    ]], { identifier })
 
     MySQL.insert.await([[
         INSERT INTO mdt_citizens (identifier, full_name, date_of_birth, phone_number, address, licenses_status, notes, flags, created_at, updated_at)
@@ -154,6 +166,14 @@ CBK_MDT.RegisterAction('create_or_update_citizen', function(source, payload)
         now()
     })
 
-    CBK_MDT.AppendOfficerActivity(Framework.GetIdentifier(source), 'citizen_profile_upserted', ('Upserted citizen %s'):format(identifier))
+    CBK_MDT.RecordOfficerActivity(source, 'citizen_profile_upserted', ('Upserted citizen %s'):format(identifier))
+    CBK_MDT.LogAudit(source, 'citizen', identifier, 'citizen_profile_upserted', before or {}, {
+        identifier = identifier,
+        full_name = fullName,
+        date_of_birth = dob,
+        phone_number = phone,
+        address = address,
+        licenses_status = licensesStatus
+    })
     return true, { success = true }
 end)

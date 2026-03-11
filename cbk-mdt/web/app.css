@@ -119,6 +119,23 @@ body {
     background: linear-gradient(90deg, rgba(56, 189, 248, 0.22), rgba(56, 189, 248, 0.04));
 }
 
+.panic-btn {
+    margin-top: 6px;
+    border: 1px solid #8f2c39;
+    border-radius: 8px;
+    background: linear-gradient(90deg, rgba(239, 68, 68, 0.35), rgba(140, 30, 45, 0.45));
+    color: #ffe7ea;
+    height: 38px;
+    text-align: center;
+    font-weight: 700;
+    letter-spacing: 0.7px;
+    cursor: pointer;
+}
+
+.panic-btn:hover {
+    filter: brightness(1.08);
+}
+
 .page-container {
     padding: 14px;
     overflow-y: auto;

@@ -16,6 +16,119 @@ Config.AllowedJobs = {
 Config.MaxSearchResults = 50
 Config.MaxRecentReports = 25
 
+Config.Security = {
+    maxPayloadDepth = 5,
+    maxPayloadKeys = 120,
+    maxPayloadStringLength = 4000,
+    maxInFlightRequests = 3,
+    requestWindowMs = 10000,
+    maxRequestsPerWindow = 50,
+    abuseBlockMs = 30000,
+    abuseStrikesBeforeBlock = 8,
+    actionCooldownMs = {
+        get_dashboard = 2000,
+        list_charges = 500,
+        get_officer_profile = 1200,
+        update_officer_notes = 3000,
+        search_citizens = 500,
+        get_citizen_profile = 600,
+        save_citizen_notes = 2000,
+        create_or_update_citizen = 2500,
+        search_vehicles = 500,
+        upsert_vehicle = 2500,
+        set_vehicle_stolen = 2500,
+        create_report = 3000,
+        search_reports = 500,
+        get_report = 600,
+        create_warrant = 3500,
+        update_warrant_status = 2500,
+        create_bolo = 3500,
+        update_bolo_status = 2500,
+        add_evidence = 3000,
+        list_evidence = 500,
+        list_warrants = 500,
+        list_bolos = 500,
+        list_radar_logs = 500,
+        panic_alert = 15000
+    },
+    activityCooldownMs = 3000,
+    requireOnDuty = true,
+    requireStableSession = true,
+    radarCooldownMs = 1000,
+    radarMaxSpeed = 260,
+    radarBatchSize = 25,
+    radarFlushMs = 1500
+}
+
+Config.Permissions = {
+    aceAdmin = 'cbk.mdt.admin',
+    gradeThresholds = {
+        officer = 1,
+        supervisor = 4,
+        command = 7,
+        mdt_admin = 10
+    },
+    matrix = {
+        viewer = {
+            view = true
+        },
+        officer = {
+            view = true,
+            officer_tools = true,
+            report_writer = true,
+            evidence_writer = true,
+            warrant_writer = true,
+            bolo_writer = true,
+            citizen_writer = true,
+            vehicle_writer = true
+        },
+        supervisor = {
+            view = true,
+            officer_tools = true,
+            report_writer = true,
+            evidence_writer = true,
+            warrant_writer = true,
+            warrant_supervisor = true,
+            bolo_writer = true,
+            bolo_supervisor = true,
+            citizen_writer = true,
+            citizen_supervisor = true,
+            vehicle_writer = true,
+            vehicle_supervisor = true
+        },
+        command = {
+            view = true,
+            officer_tools = true,
+            report_writer = true,
+            evidence_writer = true,
+            warrant_writer = true,
+            warrant_supervisor = true,
+            bolo_writer = true,
+            bolo_supervisor = true,
+            citizen_writer = true,
+            citizen_supervisor = true,
+            vehicle_writer = true,
+            vehicle_supervisor = true,
+            mdt_admin = true
+        },
+        mdt_admin = {
+            view = true,
+            officer_tools = true,
+            report_writer = true,
+            evidence_writer = true,
+            warrant_writer = true,
+            warrant_supervisor = true,
+            bolo_writer = true,
+            bolo_supervisor = true,
+            citizen_writer = true,
+            citizen_supervisor = true,
+            vehicle_writer = true,
+            vehicle_supervisor = true,
+            mdt_admin = true
+        }
+    }
+}
+
 Config.NativeSync = {
     enabled = true,
     citizens = {
@@ -179,5 +292,20 @@ Config.Report = {
     maxPeoplePerReport = 25,
     maxVehiclesPerReport = 25,
     maxEvidencePerReport = 50,
-    maxChargesPerReport = 30
+    maxChargesPerReport = 30,
+    maxCitizenNameLength = 120,
+    maxVehicleModelLength = 80
+}
+
+Config.Evidence = {
+    maxMetadataDepth = 3,
+    maxMetadataKeys = 30,
+    maxMetadataStringLength = 200,
+    allowedMetadata = {
+        photo = { camera = true, timestamp = true, location = true },
+        casing = { caliber = true, serial = true },
+        fingerprint = { match_score = true, source = true },
+        dna = { match_score = true, lab = true },
+        general = { note = true }
+    }
 }

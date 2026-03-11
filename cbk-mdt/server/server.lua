@@ -2,6 +2,14 @@ CBK_MDT = CBK_MDT or {}
 CBK_MDT.Actions = CBK_MDT.Actions or {}
 
 local RESOURCE = Config.ResourceName or 'cbk-mdt'
+local Security = Config.Security or {}
+local Permissions = Config.Permissions or {}
+
+local requestState = {}
+local actionState = {}
+local inFlightRequests = {}
+local abuseState = {}
+local activityCooldownState = {}
 
 local function now()
     return os.date('%Y-%m-%d %H:%M:%S')
@@ -19,6 +27,176 @@ local function deepCopy(tbl)
     return out
 end
 
+local function payloadShapeOk(value, depth, stats)
+    depth = depth or 0
+    stats = stats or { keys = 0 }
+
+    local maxDepth = tonumber(Security.maxPayloadDepth) or 5
+    local maxKeys = tonumber(Security.maxPayloadKeys) or 120
+    local maxString = tonumber(Security.maxPayloadStringLength) or 4000
+
+    if type(value) == 'string' then
+        return #value <= maxString
+    end
+
+    if type(value) ~= 'table' then
+        return true
+    end
+
+    if depth >= maxDepth then
+        return false
+    end
+
+    for k, v in pairs(value) do
+        stats.keys = stats.keys + 1
+        if stats.keys > maxKeys then
+            return false
+        end
+
+        if type(k) == 'string' and #k > 120 then
+            return false
+        end
+
+        if not payloadShapeOk(v, depth + 1, stats) then
+            return false
+        end
+    end
+
+    return true
+end
+
+local function roleHasPermission(role, permission)
+    local matrix = Permissions.matrix or {}
+    local rolePerms = matrix[role] or {}
+    if rolePerms[permission] == true then
+        return true
+    end
+
+    return false
+end
+
+local function getOfficerRole(source)
+    local aceAdmin = Permissions.aceAdmin
+    if type(aceAdmin) == 'string' and aceAdmin ~= '' and IsPlayerAceAllowed(source, aceAdmin) then
+        return 'mdt_admin', math.huge
+    end
+
+    local _, grade = Framework.GetJob(source)
+    grade = tonumber(grade) or 0
+
+    local thresholds = Permissions.gradeThresholds or {}
+    local role = 'viewer'
+
+    if grade >= (tonumber(thresholds.officer) or 1) then
+        role = 'officer'
+    end
+    if grade >= (tonumber(thresholds.supervisor) or 4) then
+        role = 'supervisor'
+    end
+    if grade >= (tonumber(thresholds.command) or 7) then
+        role = 'command'
+    end
+    if grade >= (tonumber(thresholds.mdt_admin) or 10) then
+        role = 'mdt_admin'
+    end
+
+    return role, grade
+end
+
+local function getActionCooldown(action)
+    local map = Security.actionCooldownMs or {}
+    local value = tonumber(map[action])
+    if value and value > 0 then
+        return value
+    end
+    return 250
+end
+
+local function addStrike(source, reason)
+    local nowTick = GetGameTimer()
+    local record = abuseState[source] or { strikes = 0, blockedUntil = 0 }
+    local strikesBeforeBlock = tonumber(Security.abuseStrikesBeforeBlock) or 8
+    local blockMs = tonumber(Security.abuseBlockMs) or 30000
+
+    record.strikes = record.strikes + 1
+    if record.strikes >= strikesBeforeBlock then
+        record.blockedUntil = nowTick + blockMs
+        record.strikes = 0
+        print(('[%s] Temporary block for src %s after abuse (%s)'):format(RESOURCE, tostring(source), reason or 'unknown'))
+    end
+
+    abuseState[source] = record
+end
+
+local function checkRequestWindow(source)
+    local nowTick = GetGameTimer()
+    local windowMs = tonumber(Security.requestWindowMs) or 10000
+    local maxPerWindow = tonumber(Security.maxRequestsPerWindow) or 50
+
+    local record = requestState[source] or { windowStart = nowTick, count = 0 }
+    if nowTick - record.windowStart > windowMs then
+        record.windowStart = nowTick
+        record.count = 0
+    end
+
+    record.count = record.count + 1
+    requestState[source] = record
+
+    if record.count > maxPerWindow then
+        addStrike(source, 'request_window')
+        return false
+    end
+
+    return true
+end
+
+local function checkActionCooldown(source, action)
+    local nowTick = GetGameTimer()
+    local key = ('%s:%s'):format(source, action)
+    local lastTick = actionState[key] or 0
+    local cooldown = getActionCooldown(action)
+
+    if nowTick - lastTick < cooldown then
+        addStrike(source, ('cooldown:%s'):format(action))
+        return false
+    end
+
+    actionState[key] = nowTick
+    return true
+end
+
+local function canProcessRequest(source)
+    local nowTick = GetGameTimer()
+    local blockInfo = abuseState[source]
+    if blockInfo and blockInfo.blockedUntil and nowTick < blockInfo.blockedUntil then
+        return false, 'Rate limit active'
+    end
+
+    if not checkRequestWindow(source) then
+        return false, 'Too many requests'
+    end
+
+    local current = inFlightRequests[source] or 0
+    local maxInFlight = tonumber(Security.maxInFlightRequests) or 3
+    if current >= maxInFlight then
+        addStrike(source, 'in_flight')
+        return false, 'Too many concurrent requests'
+    end
+
+    inFlightRequests[source] = current + 1
+    return true
+end
+
+local function finishRequest(source)
+    local current = inFlightRequests[source] or 0
+    if current <= 1 then
+        inFlightRequests[source] = nil
+        return
+    end
+
+    inFlightRequests[source] = current - 1
+end
+
 local function sanitizeString(value, maxLen)
     if type(value) ~= 'string' then
         return ''
@@ -30,8 +208,59 @@ local function sanitizeString(value, maxLen)
     return trimmed
 end
 
+local function buildRequestContext(source)
+    return {
+        identifier = Framework.GetIdentifier(source),
+        department = Framework.GetDepartment(source),
+        onDuty = Framework.IsOnDuty(source)
+    }
+end
+
+local function isRequestContextFresh(source, ctx)
+    if not Framework.IsSourceValid(source) then
+        return false, 'Session expired'
+    end
+
+    if not Security.requireStableSession then
+        return true
+    end
+
+    local identifier = Framework.GetIdentifier(source)
+    if identifier ~= ctx.identifier then
+        return false, 'Session identity changed'
+    end
+
+    local department = Framework.GetDepartment(source)
+    if department ~= ctx.department then
+        return false, 'Department changed'
+    end
+
+    if Security.requireOnDuty ~= false and not Framework.IsOnDuty(source) then
+        return false, 'Must be on duty'
+    end
+
+    return true
+end
+
 function CBK_MDT.IsOfficerAllowed(source)
+    if not Framework.IsSourceValid(source) then
+        return false
+    end
+
     return Framework.IsAllowed(source)
+end
+
+function CBK_MDT.GetOfficerRole(source)
+    return getOfficerRole(source)
+end
+
+function CBK_MDT.HasPermission(source, permission)
+    if not CBK_MDT.IsOfficerAllowed(source) then
+        return false
+    end
+
+    local role = getOfficerRole(source)
+    return roleHasPermission(role, permission)
 end
 
 function CBK_MDT.EnsureOfficer(source)
@@ -84,6 +313,52 @@ function CBK_MDT.AppendOfficerActivity(identifier, action, details)
         now(),
         identifier
     })
+end
+
+function CBK_MDT.RecordOfficerActivity(source, action, details)
+    if not CBK_MDT.IsOfficerAllowed(source) then
+        return false
+    end
+
+    local cooldownMs = tonumber(Security.activityCooldownMs) or 3000
+    local tick = GetGameTimer()
+    local last = activityCooldownState[source] or 0
+    if tick - last < cooldownMs then
+        return false
+    end
+
+    local identifier = Framework.GetIdentifier(source)
+    activityCooldownState[source] = tick
+    CBK_MDT.AppendOfficerActivity(identifier, action, details)
+    return true
+end
+
+function CBK_MDT.LogAudit(source, entityType, entityKey, action, oldValue, newValue)
+    if not CBK_MDT.IsOfficerAllowed(source) then
+        return false
+    end
+
+    local actorIdentifier = Framework.GetIdentifier(source)
+    local actorName = sanitizeString(Framework.GetPlayerName(source), 120)
+    local oldJson = type(oldValue) == 'table' and json.encode(oldValue) or json.encode({})
+    local newJson = type(newValue) == 'table' and json.encode(newValue) or json.encode({})
+
+    MySQL.insert.await([[
+        INSERT INTO mdt_audit_log (
+            entity_type, entity_key, action, actor_identifier, actor_name, old_value, new_value, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ]], {
+        sanitizeString(entityType or 'unknown', 40),
+        sanitizeString(entityKey or 'unknown', 120),
+        sanitizeString(action or 'unknown', 60),
+        actorIdentifier,
+        actorName,
+        oldJson,
+        newJson,
+        now()
+    })
+
+    return true
 end
 
 function CBK_MDT.CalculateChargeTotals(charges)
@@ -148,6 +423,30 @@ end
 function CBK_MDT.RequireOfficer(source)
     if not CBK_MDT.IsOfficerAllowed(source) then
         return false, 'Not authorized'
+    end
+
+    return true
+end
+
+function CBK_MDT.RequirePermission(source, permission)
+    if not Framework.IsSourceValid(source) then
+        return false, 'Session expired'
+    end
+
+    if not CBK_MDT.IsOfficerAllowed(source) then
+        return false, 'Not authorized'
+    end
+
+    if Security.requireOnDuty ~= false and not Framework.IsOnDuty(source) then
+        return false, 'Must be on duty'
+    end
+
+    if type(permission) ~= 'string' or permission == '' then
+        return true
+    end
+
+    if not CBK_MDT.HasPermission(source, permission) then
+        return false, 'Insufficient MDT permissions'
     end
 
     return true
@@ -230,7 +529,7 @@ CreateThread(function()
 end)
 
 CBK_MDT.RegisterAction('get_dashboard', function(source)
-    local allowed, reason = CBK_MDT.RequireOfficer(source)
+    local allowed, reason = CBK_MDT.RequirePermission(source, 'view')
     if not allowed then
         return false, reason
     end
@@ -240,7 +539,7 @@ CBK_MDT.RegisterAction('get_dashboard', function(source)
 end)
 
 CBK_MDT.RegisterAction('list_charges', function(source)
-    local allowed, reason = CBK_MDT.RequireOfficer(source)
+    local allowed, reason = CBK_MDT.RequirePermission(source, 'view')
     if not allowed then
         return false, reason
     end
@@ -250,7 +549,7 @@ CBK_MDT.RegisterAction('list_charges', function(source)
 end)
 
 CBK_MDT.RegisterAction('get_officer_profile', function(source)
-    local allowed, reason = CBK_MDT.RequireOfficer(source)
+    local allowed, reason = CBK_MDT.RequirePermission(source, 'view')
     if not allowed then
         return false, reason
     end
@@ -272,13 +571,14 @@ CBK_MDT.RegisterAction('get_officer_profile', function(source)
 end)
 
 CBK_MDT.RegisterAction('update_officer_notes', function(source, payload)
-    local allowed, reason = CBK_MDT.RequireOfficer(source)
+    local allowed, reason = CBK_MDT.RequirePermission(source, 'officer_tools')
     if not allowed then
         return false, reason
     end
 
     local identifier = Framework.GetIdentifier(source)
     local notes = sanitizeString(payload and payload.notes or '', 2500)
+    local before = MySQL.single.await('SELECT identifier, notes FROM mdt_officers WHERE identifier = ?', { identifier })
 
     MySQL.update.await('UPDATE mdt_officers SET notes = ?, updated_at = ? WHERE identifier = ?', {
         notes,
@@ -286,12 +586,59 @@ CBK_MDT.RegisterAction('update_officer_notes', function(source, payload)
         identifier
     })
 
-    CBK_MDT.AppendOfficerActivity(identifier, 'officer_notes_updated', 'Officer notes updated in MDT.')
+    CBK_MDT.RecordOfficerActivity(source, 'officer_notes_updated', 'Officer notes updated in MDT.')
+    CBK_MDT.LogAudit(source, 'officer', identifier, 'officer_notes_updated', before or {}, {
+        identifier = identifier,
+        notes = notes
+    })
+    return true, { success = true }
+end)
+
+CBK_MDT.RegisterAction('panic_alert', function(source)
+    local allowed, reason = CBK_MDT.RequirePermission(source, 'view')
+    if not allowed then
+        return false, reason
+    end
+
+    local officerIdentifier, officerName = CBK_MDT.EnsureOfficer(source)
+    local ped = GetPlayerPed(source)
+    if not ped or ped <= 0 then
+        return false, 'Unable to locate officer'
+    end
+
+    local coords = GetEntityCoords(ped)
+    if not coords then
+        return false, 'Unable to resolve position'
+    end
+
+    local payload = {
+        x = coords.x,
+        y = coords.y,
+        z = coords.z,
+        source = source,
+        officerIdentifier = officerIdentifier,
+        officerName = officerName,
+        durationMs = 60000,
+        soundDurationMs = 10000
+    }
+
+    for _, playerId in ipairs(GetPlayers()) do
+        local target = tonumber(playerId)
+        if target and CBK_MDT.IsOfficerAllowed(target) and Framework.IsOnDuty(target) then
+            TriggerClientEvent('cbk_mdt:client:panicAlert', target, payload)
+        end
+    end
+
+    CBK_MDT.RecordOfficerActivity(source, 'panic_alert', 'Triggered MDT panic alert')
     return true, { success = true }
 end)
 
 RegisterNetEvent('cbk_mdt:server:request', function(requestId, action, payload)
     local source = source
+
+    if not Framework.IsSourceValid(source) then
+        return
+    end
 
     if type(requestId) ~= 'string' or #requestId > 64 then
         return
@@ -302,15 +649,46 @@ RegisterNetEvent('cbk_mdt:server:request', function(requestId, action, payload)
         return
     end
 
+    if type(payload) ~= 'table' then
+        payload = {}
+    end
+
+    if not payloadShapeOk(payload) then
+        addStrike(source, 'payload_shape')
+        TriggerClientEvent('cbk_mdt:client:response', source, requestId, false, 'Payload rejected')
+        return
+    end
+
+    local ctx = buildRequestContext(source)
+    if Security.requireOnDuty ~= false and not ctx.onDuty then
+        TriggerClientEvent('cbk_mdt:client:response', source, requestId, false, 'Must be on duty')
+        return
+    end
+
+    local allowed, reason = canProcessRequest(source)
+    if not allowed then
+        TriggerClientEvent('cbk_mdt:client:response', source, requestId, false, reason or 'Rate limited')
+        return
+    end
+
+    if not checkActionCooldown(source, action) then
+        finishRequest(source)
+        TriggerClientEvent('cbk_mdt:client:response', source, requestId, false, 'Action cooling down')
+        return
+    end
+
     local handler = CBK_MDT.Actions[action]
     if not handler then
+        finishRequest(source)
         TriggerClientEvent('cbk_mdt:client:response', source, requestId, false, 'Unknown action')
         return
     end
 
     local ok, success, result = pcall(function()
-        return handler(source, deepCopy(payload or {}))
+        return handler(source, deepCopy(payload))
     end)
+
+    finishRequest(source)
 
     if not ok then
         print(('[cbk-mdt] Action error (%s): %s'):format(action, success))
@@ -318,15 +696,19 @@ RegisterNetEvent('cbk_mdt:server:request', function(requestId, action, payload)
         return
     end
 
-    TriggerClientEvent('cbk_mdt:client:response', source, requestId, success, result)
-end)
-
-RegisterNetEvent('cbk_mdt:server:appendActivity', function(action, details)
-    local source = source
-    if not CBK_MDT.IsOfficerAllowed(source) then
+    local fresh, reasonFresh = isRequestContextFresh(source, ctx)
+    if not fresh then
+        TriggerClientEvent('cbk_mdt:client:response', source, requestId, false, reasonFresh or 'Session changed')
         return
     end
 
-    local identifier = Framework.GetIdentifier(source)
-    CBK_MDT.AppendOfficerActivity(identifier, action, details)
+    TriggerClientEvent('cbk_mdt:client:response', source, requestId, success, result)
+end)
+
+AddEventHandler('playerDropped', function()
+    local source = source
+    requestState[source] = nil
+    abuseState[source] = nil
+    inFlightRequests[source] = nil
+    activityCooldownState[source] = nil
 end)

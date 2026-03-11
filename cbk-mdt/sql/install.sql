@@ -152,3 +152,19 @@ CREATE TABLE IF NOT EXISTS `mdt_vehicles` (
     KEY `ix_mdt_vehicles_owner` (`owner_identifier`),
     KEY `ix_mdt_vehicles_stolen` (`stolen`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `mdt_audit_log` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `entity_type` VARCHAR(40) NOT NULL,
+    `entity_key` VARCHAR(120) NOT NULL,
+    `action` VARCHAR(60) NOT NULL,
+    `actor_identifier` VARCHAR(80) NOT NULL,
+    `actor_name` VARCHAR(120) NOT NULL,
+    `old_value` LONGTEXT,
+    `new_value` LONGTEXT,
+    `created_at` DATETIME NOT NULL,
+    PRIMARY KEY (`id`),
+    KEY `ix_mdt_audit_entity` (`entity_type`, `entity_key`),
+    KEY `ix_mdt_audit_actor` (`actor_identifier`),
+    KEY `ix_mdt_audit_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -10,6 +10,7 @@ const state = {
 const root = document.getElementById('mdtRoot');
 const closeBtn = document.getElementById('closeMdt');
 const refreshBtn = document.getElementById('refreshDashboard');
+const panicBtn = document.getElementById('panicButton');
 const navButtons = Array.from(document.querySelectorAll('.nav-btn'));
 
 const pages = {
@@ -47,10 +48,6 @@ const request = async (action, payload = {}) => {
         throw new Error(result.data || 'Request failed');
     }
     return result.data;
-};
-
-const appendActivity = async (action, details) => {
-    await post('mdt:appendActivity', { action, details });
 };
 
 const notify = (text, isError = false) => {
@@ -303,7 +300,6 @@ const renderReports = () => {
         });
 
         notify(`Report #${report.id} created. Fines: $${report.total_fines}, Jail: ${report.total_jail_time} min`);
-        appendActivity('report_created_ui', `Created report #${report.id} from NUI`);
     });
 
     document.getElementById('reportSearchBtn').addEventListener('click', async () => {
@@ -577,6 +573,26 @@ const setupNavigation = () => {
     });
 };
 
+const setupPanicButton = () => {
+    if (!panicBtn) {
+        return;
+    }
+
+    panicBtn.addEventListener('click', async () => {
+        panicBtn.disabled = true;
+        try {
+            await request('panic_alert', {});
+            notify('PANIC sent to all on-duty officers.');
+        } catch (_error) {
+            notify('PANIC failed to send. Check MDT permissions.', true);
+        } finally {
+            setTimeout(() => {
+                panicBtn.disabled = false;
+            }, 1200);
+        }
+    });
+};
+
 const setupWindowInteractions = () => {
     const header = document.getElementById('mdtHeader');
     const resize = document.getElementById('resizeHandle');
@@ -669,4 +685,5 @@ document.addEventListener('keydown', (event) => {
 });
 
 setupNavigation();
+setupPanicButton();
 setupWindowInteractions();

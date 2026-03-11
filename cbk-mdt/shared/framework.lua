@@ -12,6 +12,15 @@ local function detectFramework()
         return 'qbox'
     end
 
+    if GetResourceState('cbk2') == 'started' then
+        local ok = pcall(function()
+            return exports['cbk2']:GetCoreObject()
+        end)
+        if ok then
+            return 'qbox'
+        end
+    end
+
     if GetResourceState('qb-core') == 'started' then
         return 'qbcore'
     end
@@ -79,6 +88,13 @@ function Framework.GetPlayer(source)
         end)
         if ok then
             return player
+        end
+
+        local okCbk2, playerCbk2 = pcall(function()
+            return exports['cbk2']:GetPlayer(source)
+        end)
+        if okCbk2 then
+            return playerCbk2
         end
     end
 
@@ -195,6 +211,56 @@ function Framework.IsAllowed(source)
     end
 
     return Config.AllowedJobs[string.lower(jobName)] == true
+end
+
+function Framework.IsSourceValid(source)
+    if type(source) ~= 'number' or source <= 0 then
+        return false
+    end
+
+    return GetPlayerName(source) ~= nil
+end
+
+function Framework.IsOnDuty(source)
+    local player = Framework.GetPlayer(source)
+
+    if Framework.name == 'qbcore' and player and player.PlayerData and player.PlayerData.job then
+        if type(player.PlayerData.job.onduty) == 'boolean' then
+            return player.PlayerData.job.onduty
+        end
+    end
+
+    if Framework.name == 'qbox' and player and player.PlayerData and player.PlayerData.job then
+        if type(player.PlayerData.job.onduty) == 'boolean' then
+            return player.PlayerData.job.onduty
+        end
+    end
+
+    if Framework.name == 'esx' and player and player.job then
+        if type(player.job.onDuty) == 'boolean' then
+            return player.job.onDuty
+        end
+    end
+
+    if Framework.name == 'nd_core' and player and type(player.onDuty) == 'boolean' then
+        return player.onDuty
+    end
+
+    local state = Player(source) and Player(source).state
+    if state and type(state.onduty) == 'boolean' then
+        return state.onduty
+    end
+
+    return true
+end
+
+function Framework.GetDepartment(source)
+    local jobName = Framework.GetJob(source)
+    if type(jobName) ~= 'string' then
+        return 'unknown'
+    end
+
+    return string.lower(jobName)
 end
 
 CreateThread(function()

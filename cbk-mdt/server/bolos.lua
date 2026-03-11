@@ -14,7 +14,7 @@ local function str(value, maxLen)
 end
 
 CBK_MDT.RegisterAction('create_bolo', function(source, payload)
-    local allowed, reason = CBK_MDT.RequireOfficer(source)
+    local allowed, reason = CBK_MDT.RequirePermission(source, 'bolo_writer')
     if not allowed then
         return false, reason
     end
@@ -53,12 +53,18 @@ CBK_MDT.RegisterAction('create_bolo', function(source, payload)
         now()
     })
 
-    CBK_MDT.AppendOfficerActivity(officerIdentifier, 'bolo_created', ('Created BOLO #%s'):format(tostring(boloId)))
+    CBK_MDT.RecordOfficerActivity(source, 'bolo_created', ('Created BOLO #%s'):format(tostring(boloId)))
+    CBK_MDT.LogAudit(source, 'bolo', tostring(boloId), 'bolo_created', {}, {
+        id = boloId,
+        status = 'active',
+        title = title,
+        bolo_type = boloType
+    })
     return true, { id = boloId }
 end)
 
 CBK_MDT.RegisterAction('list_bolos', function(source, payload)
-    local allowed, reason = CBK_MDT.RequireOfficer(source)
+    local allowed, reason = CBK_MDT.RequirePermission(source, 'view')
     if not allowed then
         return false, reason
     end
@@ -79,7 +85,7 @@ CBK_MDT.RegisterAction('list_bolos', function(source, payload)
 end)
 
 CBK_MDT.RegisterAction('update_bolo_status', function(source, payload)
-    local allowed, reason = CBK_MDT.RequireOfficer(source)
+    local allowed, reason = CBK_MDT.RequirePermission(source, 'bolo_writer')
     if not allowed then
         return false, reason
     end
@@ -95,6 +101,17 @@ CBK_MDT.RegisterAction('update_bolo_status', function(source, payload)
         return false, 'Invalid status'
     end
 
+    local bolo = MySQL.single.await('SELECT id, status, created_by_identifier FROM mdt_bolos WHERE id = ?', { id })
+    if not bolo then
+        return false, 'BOLO not found'
+    end
+
+    local officerIdentifier = Framework.GetIdentifier(source)
+    local isSupervisor = CBK_MDT.HasPermission(source, 'bolo_supervisor')
+    if bolo.created_by_identifier ~= officerIdentifier and not isSupervisor then
+        return false, 'Only creating officer or supervisor can change this BOLO'
+    end
+
     local updated = MySQL.update.await('UPDATE mdt_bolos SET status = ?, updated_at = ? WHERE id = ?', {
         status,
         now(),
@@ -105,6 +122,11 @@ CBK_MDT.RegisterAction('update_bolo_status', function(source, payload)
         return false, 'BOLO not found'
     end
 
-    CBK_MDT.AppendOfficerActivity(Framework.GetIdentifier(source), 'bolo_status_updated', ('BOLO #%s status set to %s'):format(tostring(id), status))
+    CBK_MDT.RecordOfficerActivity(source, 'bolo_status_updated', ('BOLO #%s status set to %s'):format(tostring(id), status))
+    CBK_MDT.LogAudit(source, 'bolo', tostring(id), 'bolo_status_updated', {
+        status = bolo.status
+    }, {
+        status = status
+    })
     return true, { success = true }
 end)
