@@ -1,4 +1,4 @@
-# KS MDT
+# CBK MDT
 
 Production-ready FiveM Police MDT resource with oxmysql persistence, secure server-authoritative actions, multi-framework adapters, and modern NUI.
 
@@ -129,3 +129,4 @@ cbk-mdt/
 - No trust in client-side calculations (charges recalculated server-side)
 - Query limits via configurable max search values
 - Radar logging includes lightweight source rate limiting
+
