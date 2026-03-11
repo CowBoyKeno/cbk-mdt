@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KS MDT</title>
+    <link rel="stylesheet" href="app.css">
+</head>
+<body>
+    <div id="mdtRoot" class="mdt hidden" role="application" aria-label="Police MDT">
+        <div id="mdtHeader" class="mdt-header">
+            <div class="title-block">
+                <span class="title">KS Police MDT</span>
+                <span id="subtitle" class="subtitle">Mobile Data Terminal</span>
+            </div>
+            <div class="header-actions">
+                <button id="refreshDashboard" class="btn btn-ghost">Refresh</button>
+                <button id="closeMdt" class="btn btn-danger">Close</button>
+            </div>
+        </div>
+
+        <div class="mdt-content">
+            <aside class="sidebar">
+                <button class="nav-btn active" data-page="dashboard">Dashboard</button>
+                <button class="nav-btn" data-page="citizens">Citizens</button>
+                <button class="nav-btn" data-page="vehicles">Vehicles</button>
+                <button class="nav-btn" data-page="reports">Reports</button>
+                <button class="nav-btn" data-page="warrants">Warrants</button>
+                <button class="nav-btn" data-page="bolos">BOLOs</button>
+                <button class="nav-btn" data-page="evidence">Evidence</button>
+                <button class="nav-btn" data-page="radar">Radar Logs</button>
+                <button class="nav-btn" data-page="officer">Officer Profile</button>
+            </aside>
+
+            <main class="page-container">
+                <section id="page-dashboard" class="page active"></section>
+                <section id="page-citizens" class="page"></section>
+                <section id="page-vehicles" class="page"></section>
+                <section id="page-reports" class="page"></section>
+                <section id="page-warrants" class="page"></section>
+                <section id="page-bolos" class="page"></section>
+                <section id="page-evidence" class="page"></section>
+                <section id="page-radar" class="page"></section>
+                <section id="page-officer" class="page"></section>
+            </main>
+        </div>
+
+        <div id="resizeHandle" class="resize-handle" aria-hidden="true"></div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
