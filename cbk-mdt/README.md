@@ -4,7 +4,7 @@
 
 Production-ready FiveM Police MDT resource with oxmysql persistence, secure server-authoritative actions, multi-framework adapters, and modern NUI.
 
-Last updated: 03-10-2026
+Last updated: 03-11-2026
 
 ## Features
 
@@ -131,4 +131,5 @@ cbk-mdt/
 - No trust in client-side calculations (charges recalculated server-side)
 - Query limits via configurable max search values
 - Radar logging includes source rate limits plus batched database inserts
+
 
