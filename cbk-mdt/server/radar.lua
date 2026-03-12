@@ -19,9 +19,15 @@ local radarLiveFeedMax = 300
 local radarLiveFeedNextId = 1
 local radarActiveLocks = {}
 local radarTokens = {}
+local radarTokenFallbackTrace = {}
 
 local function isRadarDebugEnabled()
     return (Config.Radar or {}).debug == true
+end
+
+local function setRadarDebugEnabled(state)
+    Config.Radar = Config.Radar or {}
+    Config.Radar.debug = state == true
 end
 
 local function radarTrace(message)
@@ -76,20 +82,47 @@ local function validateRadarToken(source, payload)
     end
 
     local token = str(payload.radar_token or '', 128)
-    if token == '' then
-        radarTrace(('drop: source %s missing radar token'):format(tostring(source)))
+    local radarSource = str(payload.radar_source or '', 40)
+    local wkSource = isWkRadarSource(radarSource)
+
+    -- Keep token hardening but do not black-hole wk ALPR if token sync misses.
+    -- strictSourceVehicleCheck still applies and wk source is enforced elsewhere.
+    local function allowWkFallback(reason)
+        if wkSource then
+            local nowTick = GetGameTimer()
+            local lastTick = tonumber(radarTokenFallbackTrace[source] or 0)
+            if nowTick - lastTick >= 5000 then
+                radarTokenFallbackTrace[source] = nowTick
+                radarTrace(('token fallback: source %s accepted (%s)'):format(tostring(source), tostring(reason)))
+            end
+            return true
+        end
         return false
+    end
+
+    if token == '' then
+        if wkSource then
+            return allowWkFallback('missing')
+        end
+        radarTrace(('drop: source %s missing radar token'):format(tostring(source)))
+        return allowWkFallback('missing')
     end
 
     local state = radarTokens[source]
     if not state or token ~= tostring(state.token or '') then
+        if wkSource then
+            return allowWkFallback('invalid')
+        end
         radarTrace(('drop: source %s invalid radar token'):format(tostring(source)))
-        return false
+        return allowWkFallback('invalid')
     end
 
     if os.time() > tonumber(state.expiresAt or 0) then
+        if wkSource then
+            return allowWkFallback('expired')
+        end
         radarTrace(('drop: source %s expired radar token'):format(tostring(source)))
-        return false
+        return allowWkFallback('expired')
     end
 
     return true
@@ -161,14 +194,24 @@ local function removeRadarLiveFeedById(id)
     return removed, removedRow
 end
 
-local function canProcessRadar(source)
+local function canProcessRadar(source, payload)
     local current = GetGameTimer()
-    local last = radarRateLimit[source] or 0
+    local antenna = ''
+    if type(payload) == 'table' then
+        antenna = string.lower(str(payload.antenna or '', 12))
+    end
+
+    local key = tostring(source)
+    if antenna ~= '' then
+        key = ('%s:%s'):format(key, antenna)
+    end
+
+    local last = radarRateLimit[key] or 0
     local cooldown = tonumber((Config.Security or {}).radarCooldownMs) or 1000
     if current - last < cooldown then
         return false
     end
-    radarRateLimit[source] = current
+    radarRateLimit[key] = current
     return true
 end
 
@@ -187,7 +230,14 @@ local function isRadarSourceValid(source)
     end
 
     local vehicle = GetVehiclePedIsIn(ped, false)
-    return vehicle and vehicle > 0
+    if vehicle and vehicle > 0 then
+        return true
+    end
+
+    -- Fallback to last vehicle to avoid dropping legitimate lock events during
+    -- brief ped/seat state transitions.
+    local lastVehicle = GetVehiclePedIsIn(ped, true)
+    return lastVehicle and lastVehicle > 0
 end
 
 local function insertRadarLog(source, payload)
@@ -213,7 +263,7 @@ local function insertRadarLog(source, payload)
         return
     end
 
-    if not canProcessRadar(source) then
+    if not canProcessRadar(source, payload) then
         radarTrace(('drop: source %s hit radar cooldown'):format(tostring(source)))
         return
     end
@@ -271,12 +321,14 @@ end)
 
 RegisterNetEvent('wk:onPlateLocked', function(cam, plate, index, radarToken)
     local source = source
+    local antenna = string.lower(str(cam or '', 12))
 
     insertRadarLog(source, {
         plate = plate,
         speed = 0,
         location = ('cam:%s idx:%s'):format(str(cam or '', 12), str(tostring(index or ''), 8)),
         radar_source = 'wk_wars2x_plate_lock',
+        antenna = antenna,
         radar_token = radarToken
     })
 end)
@@ -322,6 +374,49 @@ end)
 CreateThread(function()
     radarTrace('ALPR live-feed mode active (no DB reads/writes for ALPR list)')
 end)
+
+RegisterCommand('mdtdebug', function(source, args)
+    local ace = tostring((Config.Permissions or {}).aceAdmin or 'cbk.mdt.admin')
+    local isConsole = source == 0
+
+    if not isConsole and (ace == '' or not IsPlayerAceAllowed(source, ace)) then
+        TriggerClientEvent('chat:addMessage', source, {
+            color = { 255, 80, 80 },
+            args = { '[MDT]', 'You do not have permission to use /mdtdebug.' }
+        })
+        return
+    end
+
+    local mode = string.lower(tostring((args and args[1]) or 'toggle'))
+    local nextState = isRadarDebugEnabled()
+
+    if mode == 'on' then
+        nextState = true
+    elseif mode == 'off' then
+        nextState = false
+    elseif mode == 'status' then
+        nextState = isRadarDebugEnabled()
+    else
+        nextState = not isRadarDebugEnabled()
+    end
+
+    if mode ~= 'status' then
+        setRadarDebugEnabled(nextState)
+    end
+
+    local statusText = isRadarDebugEnabled() and 'ON' or 'OFF'
+    local usage = '/mdtdebug [on|off|status|toggle]'
+    local message = ('Radar debug is %s. %s'):format(statusText, usage)
+
+    print(('[cbk-mdt] %s'):format(message))
+
+    if not isConsole then
+        TriggerClientEvent('chat:addMessage', source, {
+            color = { 80, 180, 255 },
+            args = { '[MDT]', message }
+        })
+    end
+end, true)
 
 CBK_MDT.RegisterAction('list_radar_logs', function(source, payload)
     local allowed, reason = CBK_MDT.RequirePermission(source, 'view')

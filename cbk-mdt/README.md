@@ -5,6 +5,15 @@ Production-ready FiveM Police MDT resource with oxmysql persistence, secure serv
 Last updated: 03-11-2026
 Current version: 1.1.0
 
+# Additional Credits #
+
+Special shout out to **WolfKnight98**, the original creator of **wk_wars2x / Wraith ARS 2X**.
+
+Original repository: [https://github.com/WolfKnight98/wk_wars2x](https://github.com/WolfKnight98/wk_wars2x)
+
+This project exists because of the time, care, and quality put into the original release.
+Thank you for building and sharing such an outstanding radar system with the FiveM community.
+
 ## CHANGELOG
 
 - 03-11-2026 (CowBoyKeno) - v1.1.0
@@ -30,7 +39,7 @@ Current version: 1.1.0
 - oxmysql (required)
 - ox_lib (required)
 - One framework (optional but recommended): QBCore, Qbox, ESX, ND_Core, or OX_Core
-- wk_wars2x radar (optional)
+- wk_wars2x radar (optional) (only use the version that comes with the latest release of cbk-mdt)
 
 ## Installation
 
@@ -135,7 +144,6 @@ cbk-mdt/
   shared/framework.lua
   client/client.lua
   client/ui.lua
-  client/radar.lua
   server/server.lua
   server/citizens.lua
   server/vehicles.lua

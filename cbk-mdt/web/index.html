@@ -20,30 +20,35 @@
         </div>
 
         <div class="mdt-content">
-            <aside class="sidebar">
-                <button class="nav-btn active" data-page="dashboard">Dashboard</button>
-                <button class="nav-btn" data-page="citizens">Citizens</button>
-                <button class="nav-btn" data-page="vehicles">Vehicles</button>
-                <button class="nav-btn" data-page="reports">Reports</button>
-                <button class="nav-btn" data-page="warrants">Warrants</button>
-                <button class="nav-btn" data-page="bolos">BOLOs</button>
-                <button class="nav-btn" data-page="evidence">Evidence</button>
+            <nav class="top-nav">
                 <button class="nav-btn" data-page="radar">ALPR</button>
+                <button class="nav-btn" data-page="bolos">BOLO's</button>
                 <button class="nav-btn" data-page="officer">Officer Profile</button>
-                <button id="panicButton" class="panic-btn" type="button">PANIC</button>
-            </aside>
+            </nav>
 
-            <main class="page-container">
-                <section id="page-dashboard" class="page active"></section>
-                <section id="page-citizens" class="page"></section>
-                <section id="page-vehicles" class="page"></section>
-                <section id="page-reports" class="page"></section>
-                <section id="page-warrants" class="page"></section>
-                <section id="page-bolos" class="page"></section>
-                <section id="page-evidence" class="page"></section>
-                <section id="page-radar" class="page"></section>
-                <section id="page-officer" class="page"></section>
-            </main>
+            <div class="workspace-grid">
+                <aside class="sidebar">
+                    <button class="side-item side-action side-dashboard" type="button" data-action="go-dashboard">DASHBOARD</button>
+                    <button class="side-item side-action" type="button" data-action="search-profiles">Person Search</button>
+                    <button class="side-item side-action" type="button" data-action="search-vehicles">Vehicle Search</button>
+                    <button class="side-item side-action" type="button" data-action="active-warrants">Active Warrants</button>
+                    <button class="side-item side-action" type="button" data-action="evidence">Evidence</button>
+                    <button class="side-item side-action" type="button" data-action="reports">Reports</button>
+                    <button id="panicButton" class="panic-btn" type="button">PANIC</button>
+                </aside>
+
+                <main class="page-container">
+                    <section id="page-dashboard" class="page active"></section>
+                    <section id="page-citizens" class="page"></section>
+                    <section id="page-vehicles" class="page"></section>
+                    <section id="page-reports" class="page"></section>
+                    <section id="page-warrants" class="page"></section>
+                    <section id="page-bolos" class="page"></section>
+                    <section id="page-evidence" class="page"></section>
+                    <section id="page-radar" class="page"></section>
+                    <section id="page-officer" class="page"></section>
+                </main>
+            </div>
         </div>
 
         <div id="resizeHandle" class="resize-handle" aria-hidden="true"></div>

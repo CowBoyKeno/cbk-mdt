@@ -16,6 +16,7 @@ const closeBtn = document.getElementById('closeMdt');
 const refreshBtn = document.getElementById('refreshDashboard');
 const panicBtn = document.getElementById('panicButton');
 const navButtons = Array.from(document.querySelectorAll('.nav-btn'));
+const sideActionButtons = Array.from(document.querySelectorAll('.side-action'));
 
 const pages = {
     dashboard: document.getElementById('page-dashboard'),
@@ -135,10 +136,14 @@ const renderDashboard = () => {
 const renderCitizens = () => {
     pages.citizens.innerHTML = `
         <div class="card">
-            <div class="row">
+            <div class="row-3">
                 <div class="field">
-                    <label>Search Citizen</label>
-                    <input id="citizenSearchInput" placeholder="Name, identifier, phone" />
+                    <label>First Name</label>
+                    <input id="citizenFirstNameInput" placeholder="First name" />
+                </div>
+                <div class="field">
+                    <label>Last Name</label>
+                    <input id="citizenLastNameInput" placeholder="Last name" />
                 </div>
                 <div class="field" style="justify-content:flex-end;">
                     <button id="citizenSearchBtn" class="btn">Search</button>
@@ -150,8 +155,12 @@ const renderCitizens = () => {
     `;
 
     document.getElementById('citizenSearchBtn').addEventListener('click', async () => {
-        const query = document.getElementById('citizenSearchInput').value.trim();
-        const rows = await request('search_citizens', { query });
+        const firstName = document.getElementById('citizenFirstNameInput').value.trim();
+        const lastName = document.getElementById('citizenLastNameInput').value.trim();
+        const rows = await request('search_citizens', {
+            first_name: firstName,
+            last_name: lastName
+        });
         const container = document.getElementById('citizenSearchResults');
 
         container.innerHTML = rows.map((row) => `
@@ -544,8 +553,21 @@ const renderRadar = () => {
                 { suppressErrors: ['action cooling down'] }
             );
 
-            const front = rows.find((r) => String(r.antenna || '').toLowerCase() === 'front') || null;
-            const rear = rows.find((r) => String(r.antenna || '').toLowerCase() === 'rear') || null;
+            let front = rows.find((r) => String(r.antenna || '').toLowerCase() === 'front') || null;
+            let rear = rows.find((r) => String(r.antenna || '').toLowerCase() === 'rear') || null;
+
+            const untagged = rows.filter((r) => {
+                const antenna = String(r.antenna || '').toLowerCase();
+                return antenna !== 'front' && antenna !== 'rear';
+            });
+
+            if (!front && untagged.length > 0) {
+                front = untagged[0];
+            }
+
+            if (!rear && untagged.length > 1) {
+                rear = untagged[1];
+            }
 
             document.getElementById('radarResults').innerHTML = [
                 renderSlot('Front', front),
@@ -655,7 +677,57 @@ const closeMdt = async () => {
 
 const setupNavigation = () => {
     navButtons.forEach((btn) => {
+        if (!btn.dataset.page) {
+            return;
+        }
         btn.addEventListener('click', () => setPage(btn.dataset.page));
+    });
+};
+
+const setupSideActions = () => {
+    if (!sideActionButtons.length) {
+        return;
+    }
+
+    sideActionButtons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const action = String(btn.dataset.action || '');
+
+            if (action === 'go-dashboard') {
+                setPage('dashboard');
+                return;
+            }
+
+            if (action === 'search-profiles') {
+                setPage('citizens');
+                setTimeout(() => {
+                    const input = document.getElementById('citizenFirstNameInput');
+                    if (input) {
+                        input.focus();
+                    }
+                }, 0);
+                return;
+            }
+
+            if (action === 'search-vehicles') {
+                setPage('vehicles');
+                return;
+            }
+
+            if (action === 'active-warrants') {
+                setPage('warrants');
+                return;
+            }
+
+            if (action === 'evidence') {
+                setPage('evidence');
+                return;
+            }
+
+            if (action === 'reports' || action === 'view-incidents') {
+                setPage('reports');
+            }
+        });
     });
 };
 
@@ -777,5 +849,6 @@ document.addEventListener('keydown', (event) => {
 });
 
 setupNavigation();
+setupSideActions();
 setupPanicButton();
 setupWindowInteractions();

@@ -19,19 +19,35 @@ CBK_MDT.RegisterAction('search_citizens', function(source, payload)
         return false, reason
     end
 
+    local firstName = str(payload and payload.first_name or '', 60)
+    local lastName = str(payload and payload.last_name or '', 60)
     local query = str(payload and payload.query or '', 80)
-    if #query < 1 then
+    if firstName == '' and lastName == '' and #query < 1 then
         return true, {}
     end
 
-    local like = ('%%%s%%'):format(query)
-    local rows = MySQL.query.await([[
-        SELECT identifier, full_name, date_of_birth, phone_number, licenses_status, flags, updated_at
-        FROM mdt_citizens
-        WHERE identifier LIKE ? OR full_name LIKE ? OR phone_number LIKE ?
-        ORDER BY updated_at DESC
-        LIMIT ?
-    ]], { like, like, like, Config.MaxSearchResults })
+    local rows
+    if firstName ~= '' or lastName ~= '' then
+        local firstLike = ('%%%s%%'):format(firstName)
+        local lastLike = ('%%%s%%'):format(lastName)
+        rows = MySQL.query.await([[
+            SELECT identifier, full_name, date_of_birth, phone_number, licenses_status, flags, updated_at
+            FROM mdt_citizens
+            WHERE (? = '' OR full_name LIKE ?)
+              AND (? = '' OR full_name LIKE ?)
+            ORDER BY updated_at DESC
+            LIMIT ?
+        ]], { firstName, firstLike, lastName, lastLike, Config.MaxSearchResults })
+    else
+        local like = ('%%%s%%'):format(query)
+        rows = MySQL.query.await([[
+            SELECT identifier, full_name, date_of_birth, phone_number, licenses_status, flags, updated_at
+            FROM mdt_citizens
+            WHERE identifier LIKE ? OR full_name LIKE ? OR phone_number LIKE ?
+            ORDER BY updated_at DESC
+            LIMIT ?
+        ]], { like, like, like, Config.MaxSearchResults })
+    end
 
     for _, row in ipairs(rows) do
         row.flags = row.flags and (json.decode(row.flags) or {}) or {}

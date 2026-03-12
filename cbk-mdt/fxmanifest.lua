@@ -24,8 +24,7 @@ shared_scripts {
 
 client_scripts {
     'client/ui.lua',
-    'client/client.lua',
-    'client/radar.lua'
+    'client/client.lua'
 }
 
 server_scripts {
