@@ -1,10 +1,17 @@
 # CBK POLICE MDT #
 
-- MASTER Files are located in master branch of this repo! https://github.com/CowBoyKeno/cbk-mdt/tree/master/cbk-mdt
-
 Production-ready FiveM Police MDT resource with oxmysql persistence, secure server-authoritative actions, multi-framework adapters, and modern NUI.
 
 Last updated: 03-11-2026
+Current version: 1.1.0
+
+## CHANGELOG
+
+- 03-11-2026 (CowBoyKeno) - v1.1.0
+  - Switched ALPR page to live-feed mode with dedicated Front/Rear slots.
+  - Added MDT close-to-unlock behavior for matching radar antenna.
+  - Added radar ingest hardening: strict source checks and expiring token auth.
+  - Updated Wraith integration to direct server ingest (`radarHit`/`radarUnlock`) with token handshake.
 
 ## Features
 
@@ -14,7 +21,7 @@ Last updated: 03-11-2026
 - Warrant management (create, list, update status)
 - BOLO management (create, list, update status)
 - Evidence attachments with image URLs and report association
-- Radar logging with optional wk_wars2x integration
+- Live ALPR feed integration with wk_wars2x (front/rear antenna aware)
 - Officer profile, officer reports, and officer activity log
 - Draggable and resizable dark-theme NUI with responsive layout
 
@@ -76,21 +83,43 @@ Framework adapter logic is in `cbk-mdt/shared/framework.lua`.
 
 ## Radar Integration (wk_wars2x)
 
-Radar logging is optional and controlled in `cbk-mdt/shared/config.lua`:
+Radar/ALPR integration is optional and controlled in `cbk-mdt/shared/config.lua`:
 
 ```lua
 Config.Radar = {
     enabled = true,
-    provider = 'wk_wars2x'
+    provider = 'wk_wars2x',
+    captureScope = 'all',
+    strictSourceVehicleCheck = true,
+    requireToken = true,
+    tokenTtlSeconds = 180,
+    debug = false
 }
 ```
 
-The client listens for these events and forwards validated hits to the server:
+### CowBoyKeno Integration Notes
 
-- `wk_wars2x:radarHit`
-- `wk:radar:hit`
+- ALPR page now renders fixed antenna slots (Front on top, Rear on bottom).
+- ALPR list is live-feed only (in-memory), not DB-backed for the ALPR page.
+- Closing a Front/Rear ALPR lock from MDT also unlocks the same radar antenna in Wraith.
+- Radar lock automatically syncs and locks the matching plate-reader side.
 
-Server storage target: `mdt_radar_logs`.
+### Event Flow
+
+- Wraith client emits directly to MDT server:
+  - `cbk_mdt:server:radarHit`
+  - `cbk_mdt:server:radarUnlock`
+- MDT server issues auth tokens to clients:
+  - `cbk_mdt:server:requestRadarToken`
+  - `cbk_mdt:client:setRadarToken`
+- MDT close action can force local antenna unlock:
+  - `cbk_mdt:client:forceRadarUnlockAntenna`
+
+### Security Hardening
+
+- Server validates source state for radar ingest/unlock (`strictSourceVehicleCheck = true`).
+- Radar ingest/unlock requires a server-issued expiring token (`requireToken = true`).
+- `dismiss_radar_log` only forces antenna unlock for the same officer that created the ALPR lock.
 
 ## Commands
 
@@ -130,6 +159,4 @@ cbk-mdt/
 - Optional on-duty enforcement on secured actions
 - No trust in client-side calculations (charges recalculated server-side)
 - Query limits via configurable max search values
-- Radar logging includes source rate limits plus batched database inserts
-
-
+- Radar/ALPR ingest includes source rate limiting and server-side validation
