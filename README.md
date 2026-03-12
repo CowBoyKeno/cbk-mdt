@@ -40,7 +40,8 @@ Thank you for building and sharing such an outstanding radar system with the Fiv
 - ox_lib (required)
 - One framework (optional but recommended): QBCore, Qbox, ESX, ND_Core, or OX_Core
 - wk_wars2x radar (optional)
-# (only use the version of wk_wars2x that comes with the latest release of cbk-mdt)
+# (only use version of wk_wars2x that comes with latest release of cbk-mdt)
+-
 
 ## Installation
 
@@ -170,5 +171,6 @@ cbk-mdt/
 - No trust in client-side calculations (charges recalculated server-side)
 - Query limits via configurable max search values
 - Radar/ALPR ingest includes source rate limiting and server-side validation
+
 
 
