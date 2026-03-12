@@ -36,9 +36,9 @@ game "gta5"
 
 -- Define the resource metadata
 name "Wraith ARS 2X"
-description "Police radar and plate reader system for FiveM"
+description "Police radar and plate reader system for FiveM, Edited by CowBoyKeno"
 author "WolfKnight"
-version "1.3.2-cbk1"
+version "1.3.1"
 
 -- Include the files
 files {
