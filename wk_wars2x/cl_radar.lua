@@ -38,7 +38,7 @@ local type = type
 local tostring = tostring
 local math = math
 local pairs = pairs
-local os = os
+local oslib = os
 
 ---@class RadarTargetContext
 ---@field veh number
@@ -61,11 +61,16 @@ CBK_MDT_RADAR_TOKEN = nil
 local cbkMdtRadarTokenExpiresAt = 0
 
 local function EnsureMdtRadarToken(force)
-	local nowTs = os.time()
-	if ( force or CBK_MDT_RADAR_TOKEN == nil or CBK_MDT_RADAR_TOKEN == "" or cbkMdtRadarTokenExpiresAt <= ( nowTs + 5 ) ) then
+	local nowTs = ( oslib and type( oslib.time ) == "function" ) and oslib.time() or nil
+	local tokenMissing = ( CBK_MDT_RADAR_TOKEN == nil or CBK_MDT_RADAR_TOKEN == "" )
+	local tokenExpiring = ( nowTs ~= nil and cbkMdtRadarTokenExpiresAt <= ( nowTs + 5 ) )
+
+	if ( force or tokenMissing or tokenExpiring ) then
 		TriggerServerEvent( "cbk_mdt:server:requestRadarToken" )
 	end
 end
+
+CBK_MDT_EnsureRadarToken = EnsureMdtRadarToken
 
 RegisterNetEvent( "cbk_mdt:client:setRadarToken" )
 AddEventHandler( "cbk_mdt:client:setRadarToken", function( token, expiresAt )
