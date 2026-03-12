@@ -260,6 +260,21 @@ textarea {
     background: rgba(20, 25, 32, 0.95);
 }
 
+.alpr-slots {
+    display: grid;
+    grid-template-rows: auto auto;
+    gap: 10px;
+}
+
+.alpr-slot {
+    min-height: 138px;
+}
+
+.alpr-slot-title {
+    margin-bottom: 6px;
+    font-size: 13px;
+}
+
 .result-title {
     font-weight: 700;
     margin-bottom: 4px;

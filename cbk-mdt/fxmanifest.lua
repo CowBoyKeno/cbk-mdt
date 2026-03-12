@@ -6,7 +6,7 @@ lua54 'yes'
 name 'cbk-mdt'
 author 'CowBoyKeno'
 description 'Production-ready police MDT for FiveM with framework adapters and oxmysql storage'
-version '1.0.0'
+version '1.1.0'
 
 ui_page 'web/index.html'
 

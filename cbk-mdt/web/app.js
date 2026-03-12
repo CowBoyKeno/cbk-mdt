@@ -7,6 +7,10 @@ const state = {
     currentPage: 'dashboard'
 };
 
+let radarAutoRefreshTimer = null;
+let radarRefreshInFlight = false;
+let requestQueue = Promise.resolve();
+
 const root = document.getElementById('mdtRoot');
 const closeBtn = document.getElementById('closeMdt');
 const refreshBtn = document.getElementById('refreshDashboard');
@@ -41,13 +45,29 @@ const post = async (endpoint, payload) => {
     return response.json();
 };
 
-const request = async (action, payload = {}) => {
-    const result = await post('mdt:request', { action, payload });
-    if (!result.ok) {
-        notify(result.data || 'Request failed', true);
-        throw new Error(result.data || 'Request failed');
-    }
-    return result.data;
+const enqueueRequest = (handler) => {
+    const run = requestQueue.then(handler, handler);
+    requestQueue = run.catch(() => {});
+    return run;
+};
+
+const request = async (action, payload = {}, options = {}) => {
+    return enqueueRequest(async () => {
+        const result = await post('mdt:request', { action, payload });
+        if (!result.ok) {
+            const message = result.data || 'Request failed';
+            const suppressErrors = Array.isArray(options.suppressErrors) ? options.suppressErrors : [];
+            const normalized = String(message).toLowerCase();
+            const suppressed = suppressErrors.some((entry) => normalized.includes(String(entry).toLowerCase()));
+
+            if (!suppressed) {
+                notify(message, true);
+            }
+
+            throw new Error(message);
+        }
+        return result.data;
+    });
 };
 
 const notify = (text, isError = false) => {
@@ -476,27 +496,93 @@ const renderEvidence = () => {
 };
 
 const renderRadar = () => {
+    if (radarAutoRefreshTimer) {
+        clearInterval(radarAutoRefreshTimer);
+        radarAutoRefreshTimer = null;
+    }
+
     pages.radar.innerHTML = `
         <div class="card">
-            <div class="row">
-                <div class="field"><label>Plate Filter</label><input id="radarPlateFilter" placeholder="Optional plate" /></div>
-                <div class="field" style="justify-content:flex-end;"><button id="refreshRadarLogs" class="btn">Refresh Radar Logs</button></div>
-            </div>
-            <div id="radarResults" class="results" style="margin-top:10px;"></div>
+            <div class="result-title">Live ALPR Feed</div>
+            <div class="muted">Entries appear here only when radar or plate locks occur.</div>
+            <div id="radarResults" class="alpr-slots" style="margin-top:10px;"></div>
         </div>
     `;
 
-    const refresh = async () => {
-        const rows = await request('list_radar_logs', { plate: document.getElementById('radarPlateFilter').value.trim().toUpperCase() });
-        document.getElementById('radarResults').innerHTML = rows.map((r) => `
-            <div class="result-item">
-                <div class="result-title">${escapeHtml(r.plate)} | ${Number(r.speed || 0)} mph</div>
-                <div class="muted">${escapeHtml(r.location || 'Unknown location')} | Officer: ${escapeHtml(r.officer_name || 'N/A')} | ${escapeHtml(r.created_at || '')}</div>
+    const renderSlot = (title, row) => {
+        if (!row) {
+            return `
+                <div class="alpr-slot result-item">
+                    <div class="muted alpr-slot-title">Antenna: ${escapeHtml(title)}</div>
+                    <div class="muted">No active lock.</div>
+                </div>
+            `;
+        }
+
+        return `
+            <div class="alpr-slot result-item">
+                <div class="muted alpr-slot-title">Antenna: ${escapeHtml(title)}</div>
+                <div class="result-title">Plate: ${escapeHtml(row.plate || 'N/A')}</div>
+                <div class="result-title">Locked Speed: ${Number(row.speed || 0)}</div>
+                ${row.owner_identifier || row.vehicle_owner_name || row.model_name ? `<div class="muted">Player Vehicle: ${escapeHtml(row.vehicle_owner_name || row.owner_identifier || 'Unknown Owner')} | Model: ${escapeHtml(row.model_name || 'Unknown')}</div>` : ''}
+                <div class="muted">${escapeHtml(row.location || 'Unknown location')} | Officer: ${escapeHtml(row.officer_name || 'N/A')} | ${escapeHtml(row.created_at || '')}</div>
+                ${Number(row.id || 0) > 0 ? `<button class="btn alpr-close" data-id="${Number(row.id)}" style="margin-top:8px;">Close</button>` : ''}
             </div>
-        `).join('') || '<div class="muted">No radar logs found.</div>';
+        `;
     };
 
-    document.getElementById('refreshRadarLogs').addEventListener('click', refresh);
+    const refresh = async () => {
+        if (radarRefreshInFlight) {
+            return;
+        }
+
+        radarRefreshInFlight = true;
+        try {
+            const rows = await request(
+                'list_radar_logs',
+                {},
+                { suppressErrors: ['action cooling down'] }
+            );
+
+            const front = rows.find((r) => String(r.antenna || '').toLowerCase() === 'front') || null;
+            const rear = rows.find((r) => String(r.antenna || '').toLowerCase() === 'rear') || null;
+
+            document.getElementById('radarResults').innerHTML = [
+                renderSlot('Front', front),
+                renderSlot('Rear', rear)
+            ].join('');
+
+            document.querySelectorAll('.alpr-close').forEach((btn) => {
+                btn.addEventListener('click', async () => {
+                    const id = Number(btn.dataset.id || 0);
+                    if (!id) {
+                        return;
+                    }
+
+                    await request('dismiss_radar_log', { id });
+                    await refresh();
+                });
+            });
+        } catch (error) {
+            if (!String(error && error.message || '').toLowerCase().includes('action cooling down')) {
+                throw error;
+            }
+        } finally {
+            radarRefreshInFlight = false;
+        }
+    };
+
+    radarAutoRefreshTimer = setInterval(() => {
+        if (!state.isOpen || state.currentPage !== 'radar') {
+            return;
+        }
+
+        refresh().catch((error) => {
+            console.error('[MDT] Radar auto-refresh failed', error);
+            radarRefreshInFlight = false;
+        });
+    }, 3000);
+
     refresh();
 };
 
@@ -665,6 +751,12 @@ window.addEventListener('message', async (event) => {
     if (data.type === 'mdt:setOpen') {
         state.isOpen = !!data.payload.isOpen;
         root.classList.toggle('hidden', !state.isOpen);
+
+        if (!state.isOpen && radarAutoRefreshTimer) {
+            clearInterval(radarAutoRefreshTimer);
+            radarAutoRefreshTimer = null;
+            radarRefreshInFlight = false;
+        }
         return;
     }
 

@@ -21,23 +21,3 @@ local function submitRadarHit(data)
     TriggerServerEvent('cbk_mdt:server:radarHit', payload)
 end
 
-RegisterNetEvent('wk_wars2x:radarHit', function(plate, speed, location)
-    submitRadarHit({
-        plate = plate,
-        speed = speed,
-        location = location,
-        radar_source = 'wk_wars2x'
-    })
-end)
-
-RegisterNetEvent('wk:radar:hit', function(data)
-    if type(data) ~= 'table' then
-        return
-    end
-    data.radar_source = 'wk_wars2x'
-    submitRadarHit(data)
-end)
-
-RegisterNetEvent('cbk_mdt:client:radarHit', function(data)
-    submitRadarHit(data)
-end)

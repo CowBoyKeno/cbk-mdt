@@ -48,7 +48,7 @@ Config.Security = {
         list_evidence = 500,
         list_warrants = 500,
         list_bolos = 500,
-        list_radar_logs = 500,
+        list_radar_logs = 200,
         panic_alert = 15000
     },
     activityCooldownMs = 3000,
@@ -268,7 +268,18 @@ Config.NativeSync = {
 
 Config.Radar = {
     enabled = true,
-    provider = 'wk_wars2x'
+    provider = 'wk_wars2x',
+    -- all: log NPC + player plates.
+    -- players: only enforce owner-plate DB checks for non-wk sources; wk_wars2x ALPR/radar hits bypass ownership checks.
+    captureScope = 'all',
+    -- Harden incoming radar events by requiring a valid player->vehicle state for the source.
+    strictSourceVehicleCheck = true,
+    -- Require a server-issued token for radar ingest/unlock events from clients.
+    requireToken = true,
+    -- Lifetime (seconds) for radar auth tokens issued to clients.
+    tokenTtlSeconds = 180,
+    -- Prints radar ingest/drop reasons to server console for troubleshooting.
+    debug = false
 }
 
 Config.Warrant = {
